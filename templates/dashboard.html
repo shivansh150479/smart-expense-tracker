@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Personal Budget Workspace</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding-bottom: 50px; }
+        
+        .navbar {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid #334155;
+            padding: 18px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .brand { font-size: 20px; font-weight: 700; color: #38bdf8; }
+        .user-info { display: flex; align-items: center; gap: 20px; }
+        
+        /* Interactive Auto-fading Greeting */
+        .welcome-toast {
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            color: #0f172a;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 14px;
+            transition: opacity 0.8s ease, transform 0.8s ease;
+        }
+        .welcome-toast.fade-out { opacity: 0; transform: translateY(-10px); pointer-events: none; }
+        
+        .logout-btn { color: #94a3b8; text-decoration: none; font-size: 14px; padding: 6px 12px; border: 1px solid #334155; border-radius: 8px; }
+        .logout-btn:hover { color: #f8fafc; border-color: #64748b; }
+
+        .container { max-width: 1000px; margin: 40px auto; padding: 0 20px; }
+        
+        /* Summary Header Card */
+        .summary-card {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border: 1px solid #475569;
+            padding: 30px;
+            border-radius: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .summary-card h3 { color: #94a3b8; font-size: 16px; font-weight: 500; }
+        .summary-card .total { font-size: 36px; font-weight: 800; color: #38bdf8; }
+        .action-btn {
+            background: #38bdf8; color: #0f172a; padding: 12px 24px; border-radius: 10px; font-weight: 700; border: none; cursor: pointer; transition: all 0.2s ease;
+        }
+        .action-btn:hover { background: #7dd3fc; transform: scale(1.03); }
+
+        /* Grid Display */
+        .section-title { margin-bottom: 20px; font-size: 20px; color: #cbd5e1; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            padding: 24px;
+            border-radius: 14px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .card:hover { transform: translateY(-4px); border-color: #38bdf8; box-shadow: 0 10px 20px rgba(56, 189, 248, 0.15); }
+        .card .badge { display: inline-block; background: rgba(56, 189, 248, 0.1); color: #38bdf8; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+        .card h4 { font-size: 18px; margin-bottom: 8px; color: #f8fafc; }
+        .card .amount { font-size: 24px; font-weight: 700; color: #4ade80; }
+
+        /* Pop-up Modal Windows */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); z-index: 100;
+            justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: #1e293b; border: 1px solid #475569; padding: 30px; border-radius: 16px; width: 90%; max-width: 450px; position: relative;
+        }
+        .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #94a3b8; cursor: pointer; }
+        .form-control { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #fff; margin-bottom: 15px; }
+    </style>
+</head>
+<body onclick="handleUserActivity()" onmousemove="handleUserActivity()" onkeydown="handleUserActivity()">
+
+    <div class="navbar">
+        <div class="brand">Budget Workspace</div>
+        <div class="user-info">
+            {% if show_welcome %}
+                <div id="welcome-toast" class="welcome-toast">Hi, {{ username }}! 👋</div>
+            {% endif %}
+            <a href="/logout" class="logout-btn">Log Out</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Summary Header & Modal Trigger -->
+        <div class="summary-card">
+            <div>
+                <h3>Total Allocated Budget</h3>
+                <div class="total">${{ "%.2f"|format(total_amount) }}</div>
+            </div>
+            <button class="action-btn" onclick="openCreateModal()">+ Create New Budget</button>
+        </div>
+
+        <!-- Private User Budgets -->
+        <h3 class="section-title">Your Private Budgets</h3>
+        {% if budgets %}
+            <div class="grid">
+                {% for b in budgets %}
+                    <div class="card" onclick="openDetailModal({{ b.id }})">
+                        <span class="badge">{{ b.category }}</span>
+                        <h4>{{ b.title }}</h4>
+                        <div class="amount">${{ "%.2f"|format(b.amount) }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p style="color: #64748b; text-align: center; margin-top: 40px;">No budgets created yet. Click "+ Create New Budget" to begin!</p>
+        {% endif %}
+    </div>
+
+    <!-- Create Budget Modal Window -->
+    <div id="createModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('createModal')">&times;</span>
+            <h3 style="margin-bottom: 20px;">Create Budget Entry</h3>
+            <form action="/add-budget" method="POST">
+                <input type="text" name="title" class="form-control" placeholder="Budget Name (e.g. Travel, Utilities)" required>
+                <input type="number" step="0.01" name="amount" class="form-control" placeholder="Amount ($)" required>
+                <select name="category" class="form-control">
+                    <option value="General">General</option>
+                    <option value="Groceries">Groceries</option>
+                    <option value="Utilities">Utilities</option>
+                    <option value="Entertainment">Entertainment</option>
+                </select>
+                <button type="submit" class="action-btn" style="width: 100%;">Save Budget</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Individual Budget Detail Modal Window -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal('detailModal')">&times;</span>
+            <h3 id="modal-title" style="margin-bottom: 10px;">-</h3>
+            <span id="modal-category" class="badge" style="margin-bottom: 20px;">-</span>
+            <p style="color: #94a3b8; margin-bottom: 10px;">Individual Allocation:</p>
+            <h2 id="modal-amount" style="color: #4ade80; font-size: 32px; margin-bottom: 20px;">$0.00</h2>
+            <button class="action-btn" style="width: 100%; background: #334155; color: #fff;" onclick="closeModal('detailModal')">Close Window</button>
+        </div>
+    </div>
+
+    <script>
+        // Fades out greeting after activity
+        let activityDetected = false;
+        function handleUserActivity() {
+            const toast = document.getElementById('welcome-toast');
+            if (toast && !activityDetected) {
+                activityDetected = true;
+                setTimeout(() => {
+                    toast.classList.add('fade-out');
+                }, 2000);
+            }
+        }
+
+        // Modal Controls
+        function openCreateModal() { document.getElementById('createModal').style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        
+        function openDetailModal(budgetId) {
+            fetch('/get-budget-detail/' + budgetId)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.error) {
+                        document.getElementById('modal-title').innerText = data.title;
+                        document.getElementById('modal-category').innerText = data.category;
+                        document.getElementById('modal-amount').innerText = '$' + data.amount.toFixed(2);
+                        document.getElementById('detailModal').style.display = 'flex';
+                    }
+                });
+        }
+    </script>
+</body>
+</html>
