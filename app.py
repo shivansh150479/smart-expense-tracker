@@ -3,25 +3,29 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
-# Secure secret key required to sign session cookies
 app.secret_key = os.urandom(24)
 
-# SQLite Database setup
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'budget.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# Database Model for User Budgets
+# Main Budget Category (e.g., Goa Trip)
 class Budget(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), nullable=False, index=True)
     title = db.Column(db.String(100), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(50), default='General')
+    total_limit = db.Column(db.Float, nullable=False)
+    expenses = db.relationship('Expense', backref='budget', cascade="all, delete-orphan", lazy=True)
 
-# Automatically build database tables on startup safely inside application context
+# Sub-Expenses inside a Budget (e.g., Hotel, Fuel, Food)
+class Expense(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    budget_id = db.Column(db.Integer, db.ForeignKey('budget.id'), nullable=False)
+    item_name = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+
 with app.app_context():
     db.create_all()
 
@@ -37,7 +41,6 @@ def login():
         name = request.form.get('username', '').strip()
         if name:
             session['username'] = name.title()
-            session['show_welcome'] = True
             return redirect(url_for('dashboard'))
     return render_template('login.html')
 
@@ -47,18 +50,19 @@ def dashboard():
         return redirect(url_for('login'))
         
     username = session['username']
-    
-    # Strictly query ONLY budgets belonging to the logged-in user name
     user_budgets = Budget.query.filter_by(username=username).order_by(Budget.id.desc()).all()
-    total_amount = sum(b.amount for b in user_budgets) if user_budgets else 0.0
     
-    show_welcome = session.pop('show_welcome', False)
+    # Calculate totals
+    overall_limit = sum(b.total_limit for b in user_budgets)
+    overall_spent = sum(sum(e.amount for e in b.expenses) for b in user_budgets)
+    overall_remaining = overall_limit - overall_spent
     
     return render_template('dashboard.html', 
                            username=username, 
                            budgets=user_budgets, 
-                           total_amount=total_amount,
-                           show_welcome=show_welcome)
+                           overall_limit=overall_limit,
+                           overall_spent=overall_spent,
+                           overall_remaining=overall_remaining)
 
 @app.route('/add-budget', methods=['POST'])
 def add_budget():
@@ -66,20 +70,13 @@ def add_budget():
         return redirect(url_for('login'))
         
     title = request.form.get('title', '').strip()
-    amount_raw = request.form.get('amount', '').strip()
-    category = request.form.get('category', 'General').strip()
+    limit_raw = request.form.get('total_limit', '').strip()
     
-    # Defensive try-except block prevents invalid data from throwing 500 errors
-    if title and amount_raw:
+    if title and limit_raw:
         try:
-            amount = float(amount_raw)
-            if amount > 0:
-                new_budget = Budget(
-                    username=session['username'],
-                    title=title,
-                    amount=amount,
-                    category=category if category else 'General'
-                )
+            limit = float(limit_raw)
+            if limit > 0:
+                new_budget = Budget(username=session['username'], title=title, total_limit=limit)
                 db.session.add(new_budget)
                 db.session.commit()
         except ValueError:
@@ -87,21 +84,47 @@ def add_budget():
             
     return redirect(url_for('dashboard'))
 
+@app.route('/add-expense/<int:budget_id>', methods=['POST'])
+def add_expense(budget_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+        
+    budget = Budget.query.filter_by(id=budget_id, username=session['username']).first()
+    if budget:
+        item_name = request.form.get('item_name', '').strip()
+        amount_raw = request.form.get('amount', '').strip()
+        if item_name and amount_raw:
+            try:
+                amount = float(amount_raw)
+                if amount > 0:
+                    new_exp = Expense(budget_id=budget.id, item_name=item_name, amount=amount)
+                    db.session.add(new_exp)
+                    db.session.commit()
+            except ValueError:
+                pass
+                
+    return redirect(url_for('dashboard'))
+
 @app.route('/get-budget-detail/<int:budget_id>')
 def get_budget_detail(budget_id):
     if 'username' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
         
-    # Isolation Guard: Verify budget belongs to session user before returning details
     budget = Budget.query.filter_by(id=budget_id, username=session['username']).first()
     if budget:
+        spent = sum(e.amount for e in budget.expenses)
+        remaining = budget.total_limit - spent
+        expense_list = [{'id': e.id, 'item_name': e.item_name, 'amount': e.amount} for e in budget.expenses]
+        
         return jsonify({
             'id': budget.id,
             'title': budget.title,
-            'amount': budget.amount,
-            'category': budget.category
+            'total_limit': budget.total_limit,
+            'spent': spent,
+            'remaining': remaining,
+            'expenses': expense_list
         })
-    return jsonify({'error': 'Budget not found'}), 404
+    return jsonify({'error': 'Not found'}), 404
 
 @app.route('/logout')
 def logout():
