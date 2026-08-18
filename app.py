@@ -84,6 +84,38 @@ def add_budget():
             
     return redirect(url_for('dashboard'))
 
+@app.route('/edit-budget/<int:budget_id>', methods=['POST'])
+def edit_budget(budget_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+        
+    budget = Budget.query.filter_by(id=budget_id, username=session['username']).first()
+    if budget:
+        new_limit_raw = request.form.get('total_limit', '').strip()
+        new_title = request.form.get('title', '').strip()
+        try:
+            if new_limit_raw:
+                budget.total_limit = float(new_limit_raw)
+            if new_title:
+                budget.title = new_title
+            db.session.commit()
+        except ValueError:
+            pass
+            
+    return redirect(url_for('dashboard'))
+
+@app.route('/delete-budget/<int:budget_id>', methods=['POST'])
+def delete_budget(budget_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+        
+    budget = Budget.query.filter_by(id=budget_id, username=session['username']).first()
+    if budget:
+        db.session.delete(budget)
+        db.session.commit()
+            
+    return redirect(url_for('dashboard'))
+
 @app.route('/add-expense/<int:budget_id>', methods=['POST'])
 def add_expense(budget_id):
     if 'username' not in session:
@@ -103,6 +135,18 @@ def add_expense(budget_id):
             except ValueError:
                 pass
                 
+    return redirect(url_for('dashboard'))
+
+@app.route('/delete-expense/<int:expense_id>', methods=['POST'])
+def delete_expense(expense_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+        
+    expense = Expense.query.get(expense_id)
+    if expense and expense.budget.username == session['username']:
+        db.session.delete(expense)
+        db.session.commit()
+            
     return redirect(url_for('dashboard'))
 
 @app.route('/get-budget-detail/<int:budget_id>')
